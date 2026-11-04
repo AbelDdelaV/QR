@@ -27,7 +27,7 @@
       input[type="text"] {
         width: 100%;
         padding: 12px;
-        margin-bottom: 20px;
+        margin-bottom: 8px;
         border: 1px solid #ccc;
         border-radius: 5px;
         box-sizing: border-box;
@@ -57,6 +57,15 @@
         color: #555;
         margin-bottom: 8px;
         font-weight: 600;
+      }
+      .length-hint {
+        font-size: 12px;
+        text-align: left;
+        margin: -2px 0 18px;
+        color: #888;
+      }
+      .length-hint.warn {
+        color: #b06000;
       }
       .size-options {
         display: flex;
@@ -90,7 +99,7 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 20px;
+        margin-bottom: 6px;
       }
       .logo-row input[type="file"] {
         flex: 1;
@@ -102,6 +111,7 @@
         border-radius: 4px;
         border: 1px solid #ccc;
         object-fit: contain;
+        background: repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 50% / 10px 10px;
         display: none;
       }
       .logo-remove {
@@ -114,6 +124,12 @@
       }
       .logo-remove:hover {
         background-color: #d8dadd;
+      }
+      .logo-hint {
+        font-size: 12px;
+        color: #888;
+        text-align: left;
+        margin-bottom: 20px;
       }
       #qrWrapper {
         margin-top: 10px;
@@ -148,6 +164,25 @@
         height: 100%;
         object-fit: contain;
       }
+      #qrInfo {
+        margin-top: 14px;
+        font-size: 12px;
+        line-height: 1.5;
+        padding: 10px 12px;
+        border-radius: 6px;
+        background: #f1f3f4;
+        color: #444;
+        text-align: left;
+        display: none;
+      }
+      #qrInfo.warn {
+        background: #fef7e0;
+        color: #8a6300;
+      }
+      #qrInfo.bad {
+        background: #fce8e6;
+        color: #a50e0e;
+      }
       #downloadBtn {
         margin-top: 16px;
         background-color: #1e8e3e;
@@ -159,7 +194,7 @@
       .error-msg {
         color: #d93025;
         font-size: 13px;
-        margin: -12px 0 16px;
+        margin: -4px 0 16px;
         text-align: left;
         display: none;
       }
@@ -172,14 +207,15 @@
       <form id="qrForm">
         <input type="text" id="url" placeholder="Pega tu enlace aquí...">
         <div class="error-msg" id="errorMsg">Ingresa un enlace o texto primero.</div>
+        <div class="length-hint" id="lengthHint">Consejo: entre más corto el enlace, más grandes y "espaciosos" quedan los cuadritos del QR, y más fácil se escanea impreso chico.</div>
 
-        <span class="field-label">Tamaño del código</span>
+        <span class="field-label">Tamaño de exportación</span>
         <div class="size-options" id="sizeOptions">
           <div class="size-option" data-size="150">Pequeño</div>
           <div class="size-option selected" data-size="280">Mediano</div>
           <div class="size-option" data-size="420">Grande</div>
         </div>
-        <div class="size-hint">Para volantes o espacios pequeños usa "Grande": deja más margen blanco alrededor y se escanea mejor aunque se imprima reducido.</div>
+        <div class="size-hint">Esto define la resolución de la imagen (útil si lo vas a imprimir grande, como un póster). No cambia qué tan "apretado" se ve el patrón — eso depende del largo del enlace y se corrige abajo automáticamente con margen blanco al descargar.</div>
 
         <span class="field-label">Logo al centro (opcional)</span>
         <div class="logo-row">
@@ -187,6 +223,7 @@
           <img id="logoPreview" class="logo-preview" alt="Logo">
           <button type="button" id="logoRemoveBtn" class="logo-remove">Quitar</button>
         </div>
+        <div class="logo-hint">El logo se convierte automáticamente a silueta negra para que combine con el QR. Para mejor resultado, usa un PNG con fondo transparente.</div>
 
         <button type="submit">Generar QR</button>
       </form>
@@ -196,18 +233,21 @@
         <div class="logo-overlay" id="logoOverlay"><img id="logoOverlayImg" alt=""></div>
       </div>
 
+      <div id="qrInfo"></div>
+
       <button id="downloadBtn" type="button">Descargar PNG</button>
     </div>
 
     <script>
       var qrcode = null;
       var currentSize = 280;
-      var logoDataUrl = null;
+      var logoDataUrl = null; // versión en silueta negra, usada para mostrar y exportar
       var hasGenerated = false;
 
       var form = document.getElementById('qrForm');
       var urlInput = document.getElementById('url');
       var errorMsg = document.getElementById('errorMsg');
+      var lengthHint = document.getElementById('lengthHint');
       var sizeOptions = document.getElementById('sizeOptions');
       var qrWrapper = document.getElementById('qrWrapper');
       var qrcodeDiv = document.getElementById('qrcode');
@@ -217,6 +257,7 @@
       var logoOverlay = document.getElementById('logoOverlay');
       var logoOverlayImg = document.getElementById('logoOverlayImg');
       var downloadBtn = document.getElementById('downloadBtn');
+      var qrInfo = document.getElementById('qrInfo');
 
       sizeOptions.addEventListener('click', function (e) {
         var target = e.target.closest('.size-option');
@@ -229,16 +270,48 @@
         if (hasGenerated) generar();
       });
 
+      // Convierte una imagen (con transparencia idealmente) en una silueta negra,
+      // conservando el canal alfa, para que el logo se vea integrado con el QR.
+      function toBlackSilhouette(srcDataUrl, callback) {
+        var img = new Image();
+        img.onload = function () {
+          var c = document.createElement('canvas');
+          c.width = img.naturalWidth || img.width;
+          c.height = img.naturalHeight || img.height;
+          var ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          try {
+            var data = ctx.getImageData(0, 0, c.width, c.height);
+            var px = data.data;
+            for (var i = 0; i < px.length; i += 4) {
+              if (px[i + 3] > 0) {
+                px[i] = 0;
+                px[i + 1] = 0;
+                px[i + 2] = 0;
+              }
+            }
+            ctx.putImageData(data, 0, 0);
+            callback(c.toDataURL('image/png'));
+          } catch (err) {
+            // Si la imagen bloquea el canvas (p.ej. origen cruzado), se usa tal cual.
+            callback(srcDataUrl);
+          }
+        };
+        img.src = srcDataUrl;
+      }
+
       logoInput.addEventListener('change', function () {
         var file = logoInput.files[0];
         if (!file) return;
         var reader = new FileReader();
         reader.onload = function (e) {
-          logoDataUrl = e.target.result;
-          logoPreview.src = logoDataUrl;
-          logoPreview.style.display = 'inline-block';
-          logoRemoveBtn.style.display = 'inline-block';
-          if (hasGenerated) generar();
+          toBlackSilhouette(e.target.result, function (blackDataUrl) {
+            logoDataUrl = blackDataUrl;
+            logoPreview.src = logoDataUrl;
+            logoPreview.style.display = 'inline-block';
+            logoRemoveBtn.style.display = 'inline-block';
+            if (hasGenerated) generar();
+          });
         };
         reader.readAsDataURL(file);
       });
@@ -256,13 +329,31 @@
           logoOverlay.style.display = 'none';
           return;
         }
-        // El nivel de corrección de errores es alto (H, ~30%), así que un logo
-        // de hasta ~22% del ancho se puede tapar sin romper el escaneo.
+        // Con corrección alta (H, ~30%) un logo de hasta ~22% del ancho
+        // se puede tapar sin romper el escaneo.
         var overlaySize = Math.round(currentSize * 0.22);
         logoOverlay.style.width = overlaySize + 'px';
         logoOverlay.style.height = overlaySize + 'px';
         logoOverlayImg.src = logoDataUrl;
         logoOverlay.style.display = 'block';
+      }
+
+      function updateQrInfo(moduleCount, correctLevelLabel) {
+        var cls, nota;
+        if (moduleCount <= 25) {
+          cls = '';
+          nota = 'Código simple: cuadritos grandes, ideal para imprimir pequeño.';
+        } else if (moduleCount <= 33) {
+          cls = 'warn';
+          nota = 'Densidad media: imprímelo en tamaño mediano o más grande para que escanee bien.';
+        } else {
+          cls = 'bad';
+          nota = 'Enlace largo: el patrón queda muy apretado. Si lo vas a imprimir chico, acórtalo (por ejemplo con bit.ly) o imprímelo más grande.';
+        }
+        qrInfo.className = cls;
+        qrInfo.innerHTML =
+          '<strong>' + moduleCount + '×' + moduleCount + ' módulos</strong> · Corrección ' + correctLevelLabel + '<br>' + nota;
+        qrInfo.style.display = 'block';
       }
 
       function generar() {
@@ -273,6 +364,12 @@
         }
         errorMsg.style.display = 'none';
 
+        // Sin logo: corrección baja, así el código necesita menos módulos
+        // para el mismo texto (cuadritos más grandes). Con logo: corrección
+        // alta, necesaria para que el logo no rompa la lectura.
+        var usingLogo = !!logoDataUrl;
+        var correctLevel = usingLogo ? QRCode.CorrectLevel.H : QRCode.CorrectLevel.L;
+
         qrcodeDiv.innerHTML = '';
         qrcode = new QRCode(qrcodeDiv, {
           text: text,
@@ -280,13 +377,33 @@
           height: currentSize,
           colorDark: '#000000',
           colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.H
+          correctLevel: correctLevel
         });
 
         updateLogoOverlay();
+
+        var moduleCount = 21;
+        try {
+          moduleCount = qrcode._oQRCode.getModuleCount();
+        } catch (err) {
+          /* si la librería cambia su estructura interna, se omite el dato */
+        }
+        updateQrInfo(moduleCount, usingLogo ? 'alta (por el logo)' : 'baja (sin logo)');
+
         hasGenerated = true;
         downloadBtn.style.display = 'block';
       }
+
+      urlInput.addEventListener('input', function () {
+        var len = urlInput.value.trim().length;
+        if (len > 60) {
+          lengthHint.classList.add('warn');
+          lengthHint.textContent = 'Tu enlace tiene ' + len + ' caracteres: el QR quedará denso. Para que se escanee bien impreso chico, considera acortarlo (bit.ly, etc.).';
+        } else {
+          lengthHint.classList.remove('warn');
+          lengthHint.textContent = 'Consejo: entre más corto el enlace, más grandes y "espaciosos" quedan los cuadritos del QR, y más fácil se escanea impreso chico.';
+        }
+      });
 
       form.addEventListener('submit', function (e) {
         e.preventDefault();
