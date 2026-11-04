@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Generador QR Privado</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+      integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU"
+      crossorigin="anonymous"
+    ></script>
     <style>
       body {
         font-family: sans-serif;
@@ -17,16 +21,17 @@
         padding: 30px;
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        max-width: 400px;
+        max-width: 420px;
         margin: auto;
       }
-      input {
+      input[type="text"] {
         width: 100%;
         padding: 12px;
         margin-bottom: 20px;
         border: 1px solid #ccc;
         border-radius: 5px;
         box-sizing: border-box;
+        font-size: 15px;
       }
       button {
         background-color: #1a73e8;
@@ -41,42 +46,328 @@
       button:hover {
         background-color: #1557b0;
       }
+      button:disabled {
+        background-color: #9fb9e8;
+        cursor: not-allowed;
+      }
+      .field-label {
+        display: block;
+        text-align: left;
+        font-size: 13px;
+        color: #555;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      .size-options {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .size-option {
+        flex: 1;
+        padding: 10px 6px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+        color: #333;
+      }
+      .size-option.selected {
+        border-color: #1a73e8;
+        background: #e8f0fe;
+        color: #1a73e8;
+        font-weight: 600;
+      }
+      .size-hint {
+        font-size: 12px;
+        color: #888;
+        text-align: left;
+        margin-bottom: 20px;
+        margin-top: -2px;
+      }
+      .logo-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .logo-row input[type="file"] {
+        flex: 1;
+        font-size: 13px;
+      }
+      .logo-preview {
+        width: 34px;
+        height: 34px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        object-fit: contain;
+        display: none;
+      }
+      .logo-remove {
+        width: auto;
+        padding: 6px 10px;
+        font-size: 12px;
+        background-color: #e8eaed;
+        color: #333;
+        display: none;
+      }
+      .logo-remove:hover {
+        background-color: #d8dadd;
+      }
+      #qrWrapper {
+        margin-top: 10px;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+      }
       #qrcode {
-        margin-top: 30px;
         display: flex;
         justify-content: center;
       }
-      #qrcode img {
-        border: 10px solid white;
+      #qrcode img, #qrcode canvas {
+        border: 14px solid white;
         border-radius: 5px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      }
+      .logo-overlay {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border-radius: 8px;
+        padding: 5px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+        display: none;
+      }
+      .logo-overlay img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      #downloadBtn {
+        margin-top: 16px;
+        background-color: #1e8e3e;
+        display: none;
+      }
+      #downloadBtn:hover {
+        background-color: #166d30;
+      }
+      .error-msg {
+        color: #d93025;
+        font-size: 13px;
+        margin: -12px 0 16px;
+        text-align: left;
+        display: none;
       }
     </style>
   </head>
   <body>
     <div class="container">
       <h2>Generador QR</h2>
-      
-      <input type="text" id="url" placeholder="Pega tu enlace aquí...">
-      <button onclick="generar()">Generar QR</button>
-      
-      <div id="qrcode"></div>
+
+      <form id="qrForm">
+        <input type="text" id="url" placeholder="Pega tu enlace aquí...">
+        <div class="error-msg" id="errorMsg">Ingresa un enlace o texto primero.</div>
+
+        <span class="field-label">Tamaño del código</span>
+        <div class="size-options" id="sizeOptions">
+          <div class="size-option" data-size="150">Pequeño</div>
+          <div class="size-option selected" data-size="280">Mediano</div>
+          <div class="size-option" data-size="420">Grande</div>
+        </div>
+        <div class="size-hint">Para volantes o espacios pequeños usa "Grande": deja más margen blanco alrededor y se escanea mejor aunque se imprima reducido.</div>
+
+        <span class="field-label">Logo al centro (opcional)</span>
+        <div class="logo-row">
+          <input type="file" id="logoInput" accept="image/*">
+          <img id="logoPreview" class="logo-preview" alt="Logo">
+          <button type="button" id="logoRemoveBtn" class="logo-remove">Quitar</button>
+        </div>
+
+        <button type="submit">Generar QR</button>
+      </form>
+
+      <div id="qrWrapper">
+        <div id="qrcode"></div>
+        <div class="logo-overlay" id="logoOverlay"><img id="logoOverlayImg" alt=""></div>
+      </div>
+
+      <button id="downloadBtn" type="button">Descargar PNG</button>
     </div>
 
     <script>
-      var qrcode = new QRCode(document.getElementById("qrcode"), {
-        width: 250,
-        height: 250,
-        colorDark : "#000000",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.H
+      var qrcode = null;
+      var currentSize = 280;
+      var logoDataUrl = null;
+      var hasGenerated = false;
+
+      var form = document.getElementById('qrForm');
+      var urlInput = document.getElementById('url');
+      var errorMsg = document.getElementById('errorMsg');
+      var sizeOptions = document.getElementById('sizeOptions');
+      var qrWrapper = document.getElementById('qrWrapper');
+      var qrcodeDiv = document.getElementById('qrcode');
+      var logoInput = document.getElementById('logoInput');
+      var logoPreview = document.getElementById('logoPreview');
+      var logoRemoveBtn = document.getElementById('logoRemoveBtn');
+      var logoOverlay = document.getElementById('logoOverlay');
+      var logoOverlayImg = document.getElementById('logoOverlayImg');
+      var downloadBtn = document.getElementById('downloadBtn');
+
+      sizeOptions.addEventListener('click', function (e) {
+        var target = e.target.closest('.size-option');
+        if (!target) return;
+        Array.prototype.forEach.call(sizeOptions.children, function (el) {
+          el.classList.remove('selected');
+        });
+        target.classList.add('selected');
+        currentSize = parseInt(target.dataset.size, 10);
+        if (hasGenerated) generar();
       });
 
-      function generar() {
-        var url = document.getElementById("url").value;
-        if (!url) return;
-        qrcode.makeCode(url);
+      logoInput.addEventListener('change', function () {
+        var file = logoInput.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          logoDataUrl = e.target.result;
+          logoPreview.src = logoDataUrl;
+          logoPreview.style.display = 'inline-block';
+          logoRemoveBtn.style.display = 'inline-block';
+          if (hasGenerated) generar();
+        };
+        reader.readAsDataURL(file);
+      });
+
+      logoRemoveBtn.addEventListener('click', function () {
+        logoDataUrl = null;
+        logoInput.value = '';
+        logoPreview.style.display = 'none';
+        logoRemoveBtn.style.display = 'none';
+        if (hasGenerated) generar();
+      });
+
+      function updateLogoOverlay() {
+        if (!logoDataUrl) {
+          logoOverlay.style.display = 'none';
+          return;
+        }
+        // El nivel de corrección de errores es alto (H, ~30%), así que un logo
+        // de hasta ~22% del ancho se puede tapar sin romper el escaneo.
+        var overlaySize = Math.round(currentSize * 0.22);
+        logoOverlay.style.width = overlaySize + 'px';
+        logoOverlay.style.height = overlaySize + 'px';
+        logoOverlayImg.src = logoDataUrl;
+        logoOverlay.style.display = 'block';
       }
+
+      function generar() {
+        var text = urlInput.value.trim();
+        if (!text) {
+          errorMsg.style.display = 'block';
+          return;
+        }
+        errorMsg.style.display = 'none';
+
+        qrcodeDiv.innerHTML = '';
+        qrcode = new QRCode(qrcodeDiv, {
+          text: text,
+          width: currentSize,
+          height: currentSize,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+
+        updateLogoOverlay();
+        hasGenerated = true;
+        downloadBtn.style.display = 'block';
+      }
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        generar();
+      });
+
+      function getQrSourceElement() {
+        return qrcodeDiv.querySelector('img') || qrcodeDiv.querySelector('canvas');
+      }
+
+      downloadBtn.addEventListener('click', function () {
+        var src = getQrSourceElement();
+        if (!src) return;
+
+        var quietZone = Math.round(currentSize * 0.12);
+        var canvasSize = currentSize + quietZone * 2;
+        var canvas = document.createElement('canvas');
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+        function drawLogoAndExport(qrImg) {
+          ctx.drawImage(qrImg, quietZone, quietZone, currentSize, currentSize);
+
+          if (!logoDataUrl) {
+            triggerDownload();
+            return;
+          }
+          var logoImg = new Image();
+          logoImg.onload = function () {
+            var logoSize = Math.round(currentSize * 0.22);
+            var pad = Math.round(logoSize * 0.12);
+            var boxSize = logoSize + pad * 2;
+            var boxX = (canvasSize - boxSize) / 2;
+            var boxY = (canvasSize - boxSize) / 2;
+
+            ctx.fillStyle = '#ffffff';
+            roundRect(ctx, boxX, boxY, boxSize, boxSize, 8);
+            ctx.fill();
+
+            ctx.drawImage(
+              logoImg,
+              (canvasSize - logoSize) / 2,
+              (canvasSize - logoSize) / 2,
+              logoSize,
+              logoSize
+            );
+            triggerDownload();
+          };
+          logoImg.src = logoDataUrl;
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.arcTo(x + w, y, x + w, y + h, r);
+          ctx.arcTo(x + w, y + h, x, y + h, r);
+          ctx.arcTo(x, y + h, x, y, r);
+          ctx.arcTo(x, y, x + w, y, r);
+          ctx.closePath();
+        }
+
+        function triggerDownload() {
+          var link = document.createElement('a');
+          link.download = 'codigo-qr.png';
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        }
+
+        if (src.tagName === 'CANVAS') {
+          drawLogoAndExport(src);
+        } else {
+          var qrImg = new Image();
+          qrImg.onload = function () {
+            drawLogoAndExport(qrImg);
+          };
+          qrImg.src = src.src;
+        }
+      });
     </script>
   </body>
 </html>
