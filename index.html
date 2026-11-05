@@ -178,17 +178,17 @@
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: #fff;
-        border-radius: 8px;
-        padding: 5px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.25);
         display: none;
       }
       .logo-overlay img {
         display: block;
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
+      }
+      .logo-processing {
+        font-size: 12px;
+        color: #1a73e8;
+        text-align: left;
+        margin: -2px 0 10px;
+        display: none;
       }
       #qrInfo {
         margin-top: 14px;
@@ -255,7 +255,8 @@
           <img id="logoPreview" class="logo-preview" alt="Logo">
           <button type="button" id="logoRemoveBtn" class="logo-remove">Quitar</button>
         </div>
-        <div class="logo-hint">El logo se convierte automáticamente a silueta negra para que combine con el QR. Para mejor resultado, usa un PNG con fondo transparente.</div>
+        <div class="logo-processing" id="logoProcessing">Procesando logo (quitando fondo)...</div>
+        <div class="logo-hint">Al logo se le quita el fondo automáticamente, se convierte a silueta negra y se le agrega un margen blanco con su misma forma, así el patrón del QR empieza justo en el contorno del logo.</div>
 
         <button type="submit">Generar QR</button>
       </form>
@@ -273,7 +274,10 @@
     <script>
       var qrcode = null;
       var currentSize = 280;
-      var logoDataUrl = null; // versión en silueta negra, usada para mostrar y exportar
+      var logoSourceDataUrl = null; // logo con el fondo quitado, aún a color (insumo para la silueta)
+      var logoOverlayDataUrl = null; // silueta negra + halo blanco ya compuestos, listos para mostrar y exportar
+      var logoOverlayW = 0;
+      var logoOverlayH = 0;
       var hasGenerated = false;
       var shortenedUrl = null; // último enlace acortado con éxito, para el texto original que lo generó
       var shortenedFrom = null;
@@ -293,6 +297,7 @@
       var logoInput = document.getElementById('logoInput');
       var logoPreview = document.getElementById('logoPreview');
       var logoRemoveBtn = document.getElementById('logoRemoveBtn');
+      var logoProcessing = document.getElementById('logoProcessing');
       var logoOverlay = document.getElementById('logoOverlay');
       var logoOverlayImg = document.getElementById('logoOverlayImg');
       var downloadBtn = document.getElementById('downloadBtn');
@@ -309,34 +314,139 @@
         regenerate();
       });
 
-      // Convierte una imagen (con transparencia idealmente) en una silueta negra,
-      // conservando el canal alfa, para que el logo se vea integrado con el QR.
-      function toBlackSilhouette(srcDataUrl, callback) {
+      // Quita el fondo de una imagen: toma el color de las esquinas como "fondo"
+      // y borra (vuelve transparente) toda la región conectada al borde que se
+      // le parezca, con una inundación (flood fill) desde los bordes. Así,
+      // logos con fondo blanco o de un color sólido quedan con fondo transparente.
+      function removeBackground(srcDataUrl, callback) {
         var img = new Image();
         img.onload = function () {
+          var MAX_SIDE = 400; // evita procesar imágenes enormes, basta para un logo
+          var scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+          var w = Math.round((img.naturalWidth || img.width) * scale);
+          var h = Math.round((img.naturalHeight || img.height) * scale);
+
           var c = document.createElement('canvas');
-          c.width = img.naturalWidth || img.width;
-          c.height = img.naturalHeight || img.height;
+          c.width = w;
+          c.height = h;
           var ctx = c.getContext('2d');
-          ctx.drawImage(img, 0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, w, h);
+
           try {
-            var data = ctx.getImageData(0, 0, c.width, c.height);
-            var px = data.data;
-            for (var i = 0; i < px.length; i += 4) {
-              if (px[i + 3] > 0) {
-                px[i] = 0;
-                px[i + 1] = 0;
-                px[i + 2] = 0;
+            var imageData = ctx.getImageData(0, 0, w, h);
+            var data = imageData.data;
+
+            function at(x, y) {
+              var i = (y * w + x) * 4;
+              return [data[i], data[i + 1], data[i + 2], data[i + 3]];
+            }
+            function dist(a, b) {
+              var dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
+              return Math.sqrt(dr * dr + dg * dg + db * db);
+            }
+
+            var corners = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)]
+              .filter(function (p) { return p[3] > 10; });
+            if (corners.length === 0) {
+              // Ya es transparente en las esquinas: no hay nada que quitar.
+              callback(srcDataUrl);
+              return;
+            }
+            var bg = [0, 0, 0];
+            corners.forEach(function (p) { bg[0] += p[0]; bg[1] += p[1]; bg[2] += p[2]; });
+            bg[0] = Math.round(bg[0] / corners.length);
+            bg[1] = Math.round(bg[1] / corners.length);
+            bg[2] = Math.round(bg[2] / corners.length);
+
+            var THRESHOLD = 42;
+            var visited = new Uint8Array(w * h);
+            var stack = [];
+            for (var x = 0; x < w; x++) { stack.push(x, 0, x, h - 1); }
+            for (var y = 0; y < h; y++) { stack.push(0, y, w - 1, y); }
+
+            while (stack.length) {
+              var py = stack.pop();
+              var px = stack.pop();
+              if (px < 0 || py < 0 || px >= w || py >= h) continue;
+              var vi = py * w + px;
+              if (visited[vi]) continue;
+              visited[vi] = 1;
+              var col = at(px, py);
+              if (col[3] < 10 || dist(col, bg) < THRESHOLD) {
+                data[(py * w + px) * 4 + 3] = 0;
+                stack.push(px + 1, py, px - 1, py, px, py + 1, px, py - 1);
               }
             }
-            ctx.putImageData(data, 0, 0);
+
+            ctx.putImageData(imageData, 0, 0);
             callback(c.toDataURL('image/png'));
           } catch (err) {
-            // Si la imagen bloquea el canvas (p.ej. origen cruzado), se usa tal cual.
+            // Imagen con origen cruzado u otro bloqueo de canvas: se usa tal cual.
             callback(srcDataUrl);
           }
         };
         img.src = srcDataUrl;
+      }
+
+      // A partir de un logo ya sin fondo, arma una silueta negra con un halo
+      // blanco pegado a su propio contorno (no un cuadrado), para que el patrón
+      // del QR quede cortado limpio justo donde termina la forma del logo.
+      function buildLogoComposite(sourceDataUrl, maxSize, paddingPx, callback) {
+        var img = new Image();
+        img.onload = function () {
+          var iw = img.naturalWidth || img.width;
+          var ih = img.naturalHeight || img.height;
+          var scale = maxSize / Math.max(iw, ih);
+          var lw = Math.max(1, Math.round(iw * scale));
+          var lh = Math.max(1, Math.round(ih * scale));
+
+          var blackCanvas = document.createElement('canvas');
+          blackCanvas.width = lw;
+          blackCanvas.height = lh;
+          var bctx = blackCanvas.getContext('2d');
+          bctx.drawImage(img, 0, 0, lw, lh);
+          var bdata = bctx.getImageData(0, 0, lw, lh);
+          var bd = bdata.data;
+          for (var i = 0; i < bd.length; i += 4) {
+            if (bd[i + 3] > 0) { bd[i] = 0; bd[i + 1] = 0; bd[i + 2] = 0; }
+          }
+          bctx.putImageData(bdata, 0, 0);
+
+          var whiteCanvas = document.createElement('canvas');
+          whiteCanvas.width = lw;
+          whiteCanvas.height = lh;
+          var wctx = whiteCanvas.getContext('2d');
+          var wdata = new ImageData(new Uint8ClampedArray(bd), lw, lh);
+          var wd = wdata.data;
+          for (var j = 0; j < wd.length; j += 4) {
+            if (wd[j + 3] > 0) { wd[j] = 255; wd[j + 1] = 255; wd[j + 2] = 255; }
+          }
+          wctx.putImageData(wdata, 0, 0);
+
+          var P = Math.max(2, paddingPx);
+          var out = document.createElement('canvas');
+          out.width = lw + P * 2;
+          out.height = lh + P * 2;
+          var octx = out.getContext('2d');
+
+          // Dilata el halo blanco estampando la silueta blanca alrededor en
+          // varias direcciones, en vez de desenfocarla: así el borde queda
+          // nítido (mejor contraste para que un lector de QR lo escanee bien).
+          var steps = 24;
+          for (var k = 0; k < steps; k++) {
+            var angle = (k / steps) * Math.PI * 2;
+            var dx = Math.round(Math.cos(angle) * P);
+            var dy = Math.round(Math.sin(angle) * P);
+            octx.drawImage(whiteCanvas, P + dx, P + dy);
+          }
+          octx.drawImage(whiteCanvas, P, P);
+
+          // Encima, la silueta negra real, centrada.
+          octx.drawImage(blackCanvas, P, P);
+
+          callback(out.toDataURL('image/png'), out.width, out.height);
+        };
+        img.src = sourceDataUrl;
       }
 
       logoInput.addEventListener('change', function () {
@@ -344,11 +454,13 @@
         if (!file) return;
         var reader = new FileReader();
         reader.onload = function (e) {
-          toBlackSilhouette(e.target.result, function (blackDataUrl) {
-            logoDataUrl = blackDataUrl;
-            logoPreview.src = logoDataUrl;
+          logoProcessing.style.display = 'block';
+          removeBackground(e.target.result, function (noBgDataUrl) {
+            logoSourceDataUrl = noBgDataUrl;
+            logoPreview.src = noBgDataUrl;
             logoPreview.style.display = 'inline-block';
             logoRemoveBtn.style.display = 'inline-block';
+            logoProcessing.style.display = 'none';
             regenerate();
           });
         };
@@ -356,7 +468,8 @@
       });
 
       logoRemoveBtn.addEventListener('click', function () {
-        logoDataUrl = null;
+        logoSourceDataUrl = null;
+        logoOverlayDataUrl = null;
         logoInput.value = '';
         logoPreview.style.display = 'none';
         logoRemoveBtn.style.display = 'none';
@@ -364,17 +477,24 @@
       });
 
       function updateLogoOverlay() {
-        if (!logoDataUrl) {
+        if (!logoSourceDataUrl) {
+          logoOverlayDataUrl = null;
           logoOverlay.style.display = 'none';
           return;
         }
         // Con corrección alta (H, ~30%) un logo de hasta ~22% del ancho
         // se puede tapar sin romper el escaneo.
-        var overlaySize = Math.round(currentSize * 0.22);
-        logoOverlay.style.width = overlaySize + 'px';
-        logoOverlay.style.height = overlaySize + 'px';
-        logoOverlayImg.src = logoDataUrl;
-        logoOverlay.style.display = 'block';
+        var maxSize = Math.round(currentSize * 0.22);
+        var padding = Math.round(maxSize * 0.16);
+        buildLogoComposite(logoSourceDataUrl, maxSize, padding, function (dataUrl, w, h) {
+          logoOverlayDataUrl = dataUrl;
+          logoOverlayW = w;
+          logoOverlayH = h;
+          logoOverlayImg.src = dataUrl;
+          logoOverlayImg.width = w;
+          logoOverlayImg.height = h;
+          logoOverlay.style.display = 'block';
+        });
       }
 
       function updateQrInfo(moduleCount, correctLevelLabel) {
@@ -434,7 +554,7 @@
         // Sin logo: corrección baja, así el código necesita menos módulos
         // para el mismo texto (cuadritos más grandes). Con logo: corrección
         // alta, necesaria para que el logo no rompa la lectura.
-        var usingLogo = !!logoDataUrl;
+        var usingLogo = !!logoSourceDataUrl;
         var correctLevel = usingLogo ? QRCode.CorrectLevel.H : QRCode.CorrectLevel.L;
 
         qrcodeDiv.innerHTML = '';
@@ -576,42 +696,22 @@
         function drawLogoAndExport(qrImg) {
           ctx.drawImage(qrImg, quietZone, quietZone, currentSize, currentSize);
 
-          if (!logoDataUrl) {
+          if (!logoOverlayDataUrl) {
             triggerDownload();
             return;
           }
           var logoImg = new Image();
           logoImg.onload = function () {
-            var logoSize = Math.round(currentSize * 0.22);
-            var pad = Math.round(logoSize * 0.12);
-            var boxSize = logoSize + pad * 2;
-            var boxX = (canvasSize - boxSize) / 2;
-            var boxY = (canvasSize - boxSize) / 2;
-
-            ctx.fillStyle = '#ffffff';
-            roundRect(ctx, boxX, boxY, boxSize, boxSize, 8);
-            ctx.fill();
-
             ctx.drawImage(
               logoImg,
-              (canvasSize - logoSize) / 2,
-              (canvasSize - logoSize) / 2,
-              logoSize,
-              logoSize
+              (canvasSize - logoOverlayW) / 2,
+              (canvasSize - logoOverlayH) / 2,
+              logoOverlayW,
+              logoOverlayH
             );
             triggerDownload();
           };
-          logoImg.src = logoDataUrl;
-        }
-
-        function roundRect(ctx, x, y, w, h, r) {
-          ctx.beginPath();
-          ctx.moveTo(x + r, y);
-          ctx.arcTo(x + w, y, x + w, y + h, r);
-          ctx.arcTo(x + w, y + h, x, y + h, r);
-          ctx.arcTo(x, y + h, x, y, r);
-          ctx.arcTo(x, y, x + w, y, r);
-          ctx.closePath();
+          logoImg.src = logoOverlayDataUrl;
         }
 
         function triggerDownload() {
