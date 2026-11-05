@@ -67,6 +67,32 @@
       .length-hint.warn {
         color: #b06000;
       }
+      .shorten-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        text-align: left;
+        font-size: 12px;
+        color: #666;
+        margin: -4px 0 10px;
+      }
+      .shorten-row input[type="checkbox"] {
+        margin-top: 2px;
+      }
+      #shortenStatus {
+        font-size: 12px;
+        text-align: left;
+        margin: -4px 0 14px;
+        display: none;
+      }
+      #shortenStatus.pending { color: #1a73e8; }
+      #shortenStatus.ok { color: #1e8e3e; }
+      #shortenStatus.fail { color: #b06000; }
+      #shortenStatus a {
+        color: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
       .size-options {
         display: flex;
         gap: 8px;
@@ -205,17 +231,23 @@
       <h2>Generador QR</h2>
 
       <form id="qrForm">
-        <input type="text" id="url" placeholder="Pega tu enlace aquí...">
+        <input type="text" id="url" placeholder="Pega tu enlace aquÃ­...">
         <div class="error-msg" id="errorMsg">Ingresa un enlace o texto primero.</div>
-        <div class="length-hint" id="lengthHint">Consejo: entre más corto el enlace, más grandes y "espaciosos" quedan los cuadritos del QR, y más fácil se escanea impreso chico.</div>
+        <div class="length-hint" id="lengthHint">Consejo: entre mÃ¡s corto el enlace, mÃ¡s grandes y "espaciosos" quedan los cuadritos del QR, y mÃ¡s fÃ¡cil se escanea impreso chico.</div>
 
-        <span class="field-label">Tamaño de exportación</span>
+        <label class="shorten-row">
+          <input type="checkbox" id="autoShorten" checked>
+          <span>Acortar automÃ¡ticamente enlaces largos usando un servicio externo gratuito (cleanuri.com). El enlace completo se envÃ­a a ese servicio para generar el acortado.</span>
+        </label>
+        <div id="shortenStatus"></div>
+
+        <span class="field-label">TamaÃ±o de exportaciÃ³n</span>
         <div class="size-options" id="sizeOptions">
-          <div class="size-option" data-size="150">Pequeño</div>
+          <div class="size-option" data-size="150">PequeÃ±o</div>
           <div class="size-option selected" data-size="280">Mediano</div>
           <div class="size-option" data-size="420">Grande</div>
         </div>
-        <div class="size-hint">Esto define la resolución de la imagen (útil si lo vas a imprimir grande, como un póster). No cambia qué tan "apretado" se ve el patrón — eso depende del largo del enlace y se corrige abajo automáticamente con margen blanco al descargar.</div>
+        <div class="size-hint">Esto define la resoluciÃ³n de la imagen (Ãºtil si lo vas a imprimir grande, como un pÃ³ster). No cambia quÃ© tan "apretado" se ve el patrÃ³n â€” eso depende del largo del enlace y se corrige abajo automÃ¡ticamente con margen blanco al descargar.</div>
 
         <span class="field-label">Logo al centro (opcional)</span>
         <div class="logo-row">
@@ -223,7 +255,7 @@
           <img id="logoPreview" class="logo-preview" alt="Logo">
           <button type="button" id="logoRemoveBtn" class="logo-remove">Quitar</button>
         </div>
-        <div class="logo-hint">El logo se convierte automáticamente a silueta negra para que combine con el QR. Para mejor resultado, usa un PNG con fondo transparente.</div>
+        <div class="logo-hint">El logo se convierte automÃ¡ticamente a silueta negra para que combine con el QR. Para mejor resultado, usa un PNG con fondo transparente.</div>
 
         <button type="submit">Generar QR</button>
       </form>
@@ -241,13 +273,20 @@
     <script>
       var qrcode = null;
       var currentSize = 280;
-      var logoDataUrl = null; // versión en silueta negra, usada para mostrar y exportar
+      var logoDataUrl = null; // versiÃ³n en silueta negra, usada para mostrar y exportar
       var hasGenerated = false;
+      var shortenedUrl = null; // Ãºltimo enlace acortado con Ã©xito, para el texto original que lo generÃ³
+      var shortenedFrom = null;
+      var useOriginalInstead = false; // se activa con "usar el original" tras un acortado exitoso
+      var lastRenderedText = null; // lo que realmente quedÃ³ codificado en el QR actual
 
       var form = document.getElementById('qrForm');
+      var submitBtn = form.querySelector('button[type="submit"]');
       var urlInput = document.getElementById('url');
       var errorMsg = document.getElementById('errorMsg');
       var lengthHint = document.getElementById('lengthHint');
+      var autoShortenCheckbox = document.getElementById('autoShorten');
+      var shortenStatus = document.getElementById('shortenStatus');
       var sizeOptions = document.getElementById('sizeOptions');
       var qrWrapper = document.getElementById('qrWrapper');
       var qrcodeDiv = document.getElementById('qrcode');
@@ -267,7 +306,7 @@
         });
         target.classList.add('selected');
         currentSize = parseInt(target.dataset.size, 10);
-        if (hasGenerated) generar();
+        regenerate();
       });
 
       // Convierte una imagen (con transparencia idealmente) en una silueta negra,
@@ -310,7 +349,7 @@
             logoPreview.src = logoDataUrl;
             logoPreview.style.display = 'inline-block';
             logoRemoveBtn.style.display = 'inline-block';
-            if (hasGenerated) generar();
+            regenerate();
           });
         };
         reader.readAsDataURL(file);
@@ -321,7 +360,7 @@
         logoInput.value = '';
         logoPreview.style.display = 'none';
         logoRemoveBtn.style.display = 'none';
-        if (hasGenerated) generar();
+        regenerate();
       });
 
       function updateLogoOverlay() {
@@ -329,7 +368,7 @@
           logoOverlay.style.display = 'none';
           return;
         }
-        // Con corrección alta (H, ~30%) un logo de hasta ~22% del ancho
+        // Con correcciÃ³n alta (H, ~30%) un logo de hasta ~22% del ancho
         // se puede tapar sin romper el escaneo.
         var overlaySize = Math.round(currentSize * 0.22);
         logoOverlay.style.width = overlaySize + 'px';
@@ -342,30 +381,58 @@
         var cls, nota;
         if (moduleCount <= 25) {
           cls = '';
-          nota = 'Código simple: cuadritos grandes, ideal para imprimir pequeño.';
+          nota = 'CÃ³digo simple: cuadritos grandes, ideal para imprimir pequeÃ±o.';
         } else if (moduleCount <= 33) {
           cls = 'warn';
-          nota = 'Densidad media: imprímelo en tamaño mediano o más grande para que escanee bien.';
+          nota = 'Densidad media: imprÃ­melo en tamaÃ±o mediano o mÃ¡s grande para que escanee bien.';
         } else {
           cls = 'bad';
-          nota = 'Enlace largo: el patrón queda muy apretado. Si lo vas a imprimir chico, acórtalo (por ejemplo con bit.ly) o imprímelo más grande.';
+          nota = 'Enlace largo: el patrÃ³n queda muy apretado. Si lo vas a imprimir chico, acÃ³rtalo (por ejemplo con bit.ly) o imprÃ­melo mÃ¡s grande.';
         }
         qrInfo.className = cls;
         qrInfo.innerHTML =
-          '<strong>' + moduleCount + '×' + moduleCount + ' módulos</strong> · Corrección ' + correctLevelLabel + '<br>' + nota;
+          '<strong>' + moduleCount + 'Ã—' + moduleCount + ' mÃ³dulos</strong> Â· CorrecciÃ³n ' + correctLevelLabel + '<br>' + nota;
         qrInfo.style.display = 'block';
       }
 
-      function generar() {
-        var text = urlInput.value.trim();
-        if (!text) {
-          errorMsg.style.display = 'block';
-          return;
-        }
-        errorMsg.style.display = 'none';
+      var SHORTEN_THRESHOLD = 30;
+      var isUrlLike = /^https?:\/\//i;
 
-        // Sin logo: corrección baja, así el código necesita menos módulos
-        // para el mismo texto (cuadritos más grandes). Con logo: corrección
+      // CleanURI acepta llamadas desde JavaScript del navegador (CORS habilitado),
+      // asÃ­ que se puede usar directo desde esta pÃ¡gina sin servidor propio.
+      // Lleva un lÃ­mite de tiempo: si la red o el servicio no responden, no se
+      // debe dejar al usuario esperando para siempre.
+      async function shortenUrl(longUrl) {
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, 8000);
+        try {
+          var res = await fetch('https://cleanuri.com/api/v1/shorten', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'url=' + encodeURIComponent(longUrl),
+            signal: controller.signal
+          });
+          var data = await res.json();
+          if (!res.ok || data.error) {
+            throw new Error(data.error || ('HTTP ' + res.status));
+          }
+          return data.result_url;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
+
+      function regenerate() {
+        // Re-dibuja el QR con el Ãºltimo texto ya resuelto (acortado u original),
+        // sin volver a llamar al servicio de acortado.
+        if (!hasGenerated || !lastRenderedText) return;
+        renderQr(lastRenderedText);
+      }
+
+      function renderQr(text) {
+        lastRenderedText = text;
+        // Sin logo: correcciÃ³n baja, asÃ­ el cÃ³digo necesita menos mÃ³dulos
+        // para el mismo texto (cuadritos mÃ¡s grandes). Con logo: correcciÃ³n
         // alta, necesaria para que el logo no rompa la lectura.
         var usingLogo = !!logoDataUrl;
         var correctLevel = usingLogo ? QRCode.CorrectLevel.H : QRCode.CorrectLevel.L;
@@ -386,7 +453,7 @@
         try {
           moduleCount = qrcode._oQRCode.getModuleCount();
         } catch (err) {
-          /* si la librería cambia su estructura interna, se omite el dato */
+          /* si la librerÃ­a cambia su estructura interna, se omite el dato */
         }
         updateQrInfo(moduleCount, usingLogo ? 'alta (por el logo)' : 'baja (sin logo)');
 
@@ -394,14 +461,93 @@
         downloadBtn.style.display = 'block';
       }
 
+      function useShortenedResult() {
+        useOriginalInstead = false;
+        shortenStatus.className = 'ok';
+        shortenStatus.innerHTML =
+          'Enlace acortado: <strong>' + shortenedUrl + '</strong> Â· <a href="#" id="useOriginalLink">usar el original</a>';
+        shortenStatus.style.display = 'block';
+        document.getElementById('useOriginalLink').addEventListener('click', function (e) {
+          e.preventDefault();
+          useOriginalInstead = true;
+          renderQr(shortenedFrom);
+          shortenStatus.innerHTML =
+            'Usando el enlace original Â· <a href="#" id="useShortLink">volver al acortado</a>';
+          document.getElementById('useShortLink').addEventListener('click', function (e2) {
+            e2.preventDefault();
+            useOriginalInstead = false;
+            renderQr(shortenedUrl);
+            useShortenedResult();
+          });
+        });
+      }
+
+      async function generar() {
+        var text = urlInput.value.trim();
+        if (!text) {
+          errorMsg.style.display = 'block';
+          return;
+        }
+        errorMsg.style.display = 'none';
+
+        // Reusa un acortado ya hecho para este mismo texto, en vez de pedirlo de nuevo.
+        if (shortenedFrom === text && shortenedUrl && !useOriginalInstead) {
+          renderQr(shortenedUrl);
+          useShortenedResult();
+          return;
+        }
+
+        var shouldShorten =
+          autoShortenCheckbox.checked && isUrlLike.test(text) && text.length > SHORTEN_THRESHOLD;
+
+        if (!shouldShorten) {
+          shortenStatus.style.display = 'none';
+          shortenedUrl = null;
+          shortenedFrom = null;
+          renderQr(text);
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Acortando enlace...';
+        shortenStatus.className = 'pending';
+        shortenStatus.textContent = 'Acortando enlace con cleanuri.com...';
+        shortenStatus.style.display = 'block';
+
+        try {
+          var short = await shortenUrl(text);
+          shortenedUrl = short;
+          shortenedFrom = text;
+          useOriginalInstead = false;
+          renderQr(short);
+          useShortenedResult();
+        } catch (err) {
+          shortenedUrl = null;
+          shortenedFrom = null;
+          shortenStatus.className = 'fail';
+          shortenStatus.textContent =
+            'No se pudo acortar automÃ¡ticamente (sin conexiÃ³n o el servicio no estÃ¡ disponible). Se usÃ³ el enlace original.';
+          shortenStatus.style.display = 'block';
+          renderQr(text);
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Generar QR';
+        }
+      }
+
       urlInput.addEventListener('input', function () {
+        shortenedUrl = null;
+        shortenedFrom = null;
+        useOriginalInstead = false;
+        shortenStatus.style.display = 'none';
+
         var len = urlInput.value.trim().length;
         if (len > 60) {
           lengthHint.classList.add('warn');
-          lengthHint.textContent = 'Tu enlace tiene ' + len + ' caracteres: el QR quedará denso. Para que se escanee bien impreso chico, considera acortarlo (bit.ly, etc.).';
+          lengthHint.textContent = 'Tu enlace tiene ' + len + ' caracteres: el QR quedarÃ¡ denso. Para que se escanee bien impreso chico, considera acortarlo (bit.ly, etc.).';
         } else {
           lengthHint.classList.remove('warn');
-          lengthHint.textContent = 'Consejo: entre más corto el enlace, más grandes y "espaciosos" quedan los cuadritos del QR, y más fácil se escanea impreso chico.';
+          lengthHint.textContent = 'Consejo: entre mÃ¡s corto el enlace, mÃ¡s grandes y "espaciosos" quedan los cuadritos del QR, y mÃ¡s fÃ¡cil se escanea impreso chico.';
         }
       });
 
