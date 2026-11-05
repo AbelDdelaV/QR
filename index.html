@@ -61,23 +61,18 @@
       .length-hint {
         font-size: 12px;
         text-align: left;
-        margin: -2px 0 18px;
-        color: #888;
-      }
-      .length-hint.warn {
+        margin: -2px 0 14px;
         color: #b06000;
+        display: none;
       }
       .shorten-row {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         gap: 6px;
         text-align: left;
-        font-size: 12px;
-        color: #666;
+        font-size: 13px;
+        color: #444;
         margin: -4px 0 10px;
-      }
-      .shorten-row input[type="checkbox"] {
-        margin-top: 2px;
       }
       #shortenStatus {
         font-size: 12px;
@@ -96,7 +91,7 @@
       .size-options {
         display: flex;
         gap: 8px;
-        margin-bottom: 8px;
+        margin-bottom: 18px;
       }
       .size-option {
         flex: 1;
@@ -114,55 +109,11 @@
         color: #1a73e8;
         font-weight: 600;
       }
-      .size-hint {
-        font-size: 12px;
-        color: #888;
-        text-align: left;
-        margin-bottom: 20px;
-        margin-top: -2px;
-      }
-      .logo-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 6px;
-      }
-      .logo-row input[type="file"] {
-        flex: 1;
-        font-size: 13px;
-      }
-      .logo-preview {
-        width: 34px;
-        height: 34px;
-        border-radius: 4px;
-        border: 1px solid #ccc;
-        object-fit: contain;
-        background: repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 50% / 10px 10px;
-        display: none;
-      }
-      .logo-remove {
-        width: auto;
-        padding: 6px 10px;
-        font-size: 12px;
-        background-color: #e8eaed;
-        color: #333;
-        display: none;
-      }
-      .logo-remove:hover {
-        background-color: #d8dadd;
-      }
-      .logo-hint {
-        font-size: 12px;
-        color: #888;
-        text-align: left;
-        margin-bottom: 20px;
-      }
       #qrWrapper {
         margin-top: 10px;
         display: inline-flex;
         justify-content: center;
         align-items: center;
-        position: relative;
       }
       #qrcode {
         display: flex;
@@ -173,32 +124,13 @@
         border-radius: 5px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
       }
-      .logo-overlay {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        display: none;
-      }
-      .logo-overlay img {
-        display: block;
-      }
-      .logo-processing {
-        font-size: 12px;
-        color: #1a73e8;
-        text-align: left;
-        margin: -2px 0 10px;
-        display: none;
-      }
       #qrInfo {
         margin-top: 14px;
         font-size: 12px;
-        line-height: 1.5;
-        padding: 10px 12px;
+        padding: 8px 12px;
         border-radius: 6px;
         background: #f1f3f4;
         color: #444;
-        text-align: left;
         display: none;
       }
       #qrInfo.warn {
@@ -233,37 +165,26 @@
       <form id="qrForm">
         <input type="text" id="url" placeholder="Pega tu enlace aquí...">
         <div class="error-msg" id="errorMsg">Ingresa un enlace o texto primero.</div>
-        <div class="length-hint" id="lengthHint">Consejo: entre más corto el enlace, más grandes y "espaciosos" quedan los cuadritos del QR, y más fácil se escanea impreso chico.</div>
+        <div class="length-hint" id="lengthHint">Enlace largo: el QR saldrá denso.</div>
 
         <label class="shorten-row">
           <input type="checkbox" id="autoShorten" checked>
-          <span>Acortar automáticamente enlaces largos usando un servicio externo gratuito (cleanuri.com). El enlace completo se envía a ese servicio para generar el acortado.</span>
+          <span>Acortar</span>
         </label>
         <div id="shortenStatus"></div>
 
-        <span class="field-label">Tamaño de exportación</span>
+        <span class="field-label">Tamaño</span>
         <div class="size-options" id="sizeOptions">
           <div class="size-option" data-size="150">Pequeño</div>
           <div class="size-option selected" data-size="280">Mediano</div>
           <div class="size-option" data-size="420">Grande</div>
         </div>
-        <div class="size-hint">Esto define la resolución de la imagen (útil si lo vas a imprimir grande, como un póster). No cambia qué tan "apretado" se ve el patrón — eso depende del largo del enlace y se corrige abajo automáticamente con margen blanco al descargar.</div>
-
-        <span class="field-label">Logo al centro (opcional)</span>
-        <div class="logo-row">
-          <input type="file" id="logoInput" accept="image/*">
-          <img id="logoPreview" class="logo-preview" alt="Logo">
-          <button type="button" id="logoRemoveBtn" class="logo-remove">Quitar</button>
-        </div>
-        <div class="logo-processing" id="logoProcessing">Procesando logo (quitando fondo)...</div>
-        <div class="logo-hint">Al logo se le quita el fondo automáticamente, se convierte a silueta negra y se le agrega un margen blanco con su misma forma, así el patrón del QR empieza justo en el contorno del logo.</div>
 
         <button type="submit">Generar QR</button>
       </form>
 
       <div id="qrWrapper">
         <div id="qrcode"></div>
-        <div class="logo-overlay" id="logoOverlay"><img id="logoOverlayImg" alt=""></div>
       </div>
 
       <div id="qrInfo"></div>
@@ -274,14 +195,10 @@
     <script>
       var qrcode = null;
       var currentSize = 280;
-      var logoSourceDataUrl = null; // logo con el fondo quitado, aún a color (insumo para la silueta)
-      var logoOverlayDataUrl = null; // silueta negra + halo blanco ya compuestos, listos para mostrar y exportar
-      var logoOverlayW = 0;
-      var logoOverlayH = 0;
       var hasGenerated = false;
       var shortenedUrl = null; // último enlace acortado con éxito, para el texto original que lo generó
       var shortenedFrom = null;
-      var useOriginalInstead = false; // se activa con "usar el original" tras un acortado exitoso
+      var useOriginalInstead = false; // se activa con "original" tras un acortado exitoso
       var lastRenderedText = null; // lo que realmente quedó codificado en el QR actual
 
       var form = document.getElementById('qrForm');
@@ -292,14 +209,7 @@
       var autoShortenCheckbox = document.getElementById('autoShorten');
       var shortenStatus = document.getElementById('shortenStatus');
       var sizeOptions = document.getElementById('sizeOptions');
-      var qrWrapper = document.getElementById('qrWrapper');
       var qrcodeDiv = document.getElementById('qrcode');
-      var logoInput = document.getElementById('logoInput');
-      var logoPreview = document.getElementById('logoPreview');
-      var logoRemoveBtn = document.getElementById('logoRemoveBtn');
-      var logoProcessing = document.getElementById('logoProcessing');
-      var logoOverlay = document.getElementById('logoOverlay');
-      var logoOverlayImg = document.getElementById('logoOverlayImg');
       var downloadBtn = document.getElementById('downloadBtn');
       var qrInfo = document.getElementById('qrInfo');
 
@@ -314,204 +224,20 @@
         regenerate();
       });
 
-      // Quita el fondo de una imagen: toma el color de las esquinas como "fondo"
-      // y borra (vuelve transparente) toda la región conectada al borde que se
-      // le parezca, con una inundación (flood fill) desde los bordes. Así,
-      // logos con fondo blanco o de un color sólido quedan con fondo transparente.
-      function removeBackground(srcDataUrl, callback) {
-        var img = new Image();
-        img.onload = function () {
-          var MAX_SIDE = 400; // evita procesar imágenes enormes, basta para un logo
-          var scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
-          var w = Math.round((img.naturalWidth || img.width) * scale);
-          var h = Math.round((img.naturalHeight || img.height) * scale);
-
-          var c = document.createElement('canvas');
-          c.width = w;
-          c.height = h;
-          var ctx = c.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
-
-          try {
-            var imageData = ctx.getImageData(0, 0, w, h);
-            var data = imageData.data;
-
-            function at(x, y) {
-              var i = (y * w + x) * 4;
-              return [data[i], data[i + 1], data[i + 2], data[i + 3]];
-            }
-            function dist(a, b) {
-              var dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
-              return Math.sqrt(dr * dr + dg * dg + db * db);
-            }
-
-            var corners = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)]
-              .filter(function (p) { return p[3] > 10; });
-            if (corners.length === 0) {
-              // Ya es transparente en las esquinas: no hay nada que quitar.
-              callback(srcDataUrl);
-              return;
-            }
-            var bg = [0, 0, 0];
-            corners.forEach(function (p) { bg[0] += p[0]; bg[1] += p[1]; bg[2] += p[2]; });
-            bg[0] = Math.round(bg[0] / corners.length);
-            bg[1] = Math.round(bg[1] / corners.length);
-            bg[2] = Math.round(bg[2] / corners.length);
-
-            var THRESHOLD = 42;
-            var visited = new Uint8Array(w * h);
-            var stack = [];
-            for (var x = 0; x < w; x++) { stack.push(x, 0, x, h - 1); }
-            for (var y = 0; y < h; y++) { stack.push(0, y, w - 1, y); }
-
-            while (stack.length) {
-              var py = stack.pop();
-              var px = stack.pop();
-              if (px < 0 || py < 0 || px >= w || py >= h) continue;
-              var vi = py * w + px;
-              if (visited[vi]) continue;
-              visited[vi] = 1;
-              var col = at(px, py);
-              if (col[3] < 10 || dist(col, bg) < THRESHOLD) {
-                data[(py * w + px) * 4 + 3] = 0;
-                stack.push(px + 1, py, px - 1, py, px, py + 1, px, py - 1);
-              }
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-            callback(c.toDataURL('image/png'));
-          } catch (err) {
-            // Imagen con origen cruzado u otro bloqueo de canvas: se usa tal cual.
-            callback(srcDataUrl);
-          }
-        };
-        img.src = srcDataUrl;
-      }
-
-      // A partir de un logo ya sin fondo, arma una silueta negra con un halo
-      // blanco pegado a su propio contorno (no un cuadrado), para que el patrón
-      // del QR quede cortado limpio justo donde termina la forma del logo.
-      function buildLogoComposite(sourceDataUrl, maxSize, paddingPx, callback) {
-        var img = new Image();
-        img.onload = function () {
-          var iw = img.naturalWidth || img.width;
-          var ih = img.naturalHeight || img.height;
-          var scale = maxSize / Math.max(iw, ih);
-          var lw = Math.max(1, Math.round(iw * scale));
-          var lh = Math.max(1, Math.round(ih * scale));
-
-          var blackCanvas = document.createElement('canvas');
-          blackCanvas.width = lw;
-          blackCanvas.height = lh;
-          var bctx = blackCanvas.getContext('2d');
-          bctx.drawImage(img, 0, 0, lw, lh);
-          var bdata = bctx.getImageData(0, 0, lw, lh);
-          var bd = bdata.data;
-          for (var i = 0; i < bd.length; i += 4) {
-            if (bd[i + 3] > 0) { bd[i] = 0; bd[i + 1] = 0; bd[i + 2] = 0; }
-          }
-          bctx.putImageData(bdata, 0, 0);
-
-          var whiteCanvas = document.createElement('canvas');
-          whiteCanvas.width = lw;
-          whiteCanvas.height = lh;
-          var wctx = whiteCanvas.getContext('2d');
-          var wdata = new ImageData(new Uint8ClampedArray(bd), lw, lh);
-          var wd = wdata.data;
-          for (var j = 0; j < wd.length; j += 4) {
-            if (wd[j + 3] > 0) { wd[j] = 255; wd[j + 1] = 255; wd[j + 2] = 255; }
-          }
-          wctx.putImageData(wdata, 0, 0);
-
-          var P = Math.max(2, paddingPx);
-          var out = document.createElement('canvas');
-          out.width = lw + P * 2;
-          out.height = lh + P * 2;
-          var octx = out.getContext('2d');
-
-          // Dilata el halo blanco estampando la silueta blanca alrededor en
-          // varias direcciones, en vez de desenfocarla: así el borde queda
-          // nítido (mejor contraste para que un lector de QR lo escanee bien).
-          var steps = 24;
-          for (var k = 0; k < steps; k++) {
-            var angle = (k / steps) * Math.PI * 2;
-            var dx = Math.round(Math.cos(angle) * P);
-            var dy = Math.round(Math.sin(angle) * P);
-            octx.drawImage(whiteCanvas, P + dx, P + dy);
-          }
-          octx.drawImage(whiteCanvas, P, P);
-
-          // Encima, la silueta negra real, centrada.
-          octx.drawImage(blackCanvas, P, P);
-
-          callback(out.toDataURL('image/png'), out.width, out.height);
-        };
-        img.src = sourceDataUrl;
-      }
-
-      logoInput.addEventListener('change', function () {
-        var file = logoInput.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function (e) {
-          logoProcessing.style.display = 'block';
-          removeBackground(e.target.result, function (noBgDataUrl) {
-            logoSourceDataUrl = noBgDataUrl;
-            logoPreview.src = noBgDataUrl;
-            logoPreview.style.display = 'inline-block';
-            logoRemoveBtn.style.display = 'inline-block';
-            logoProcessing.style.display = 'none';
-            regenerate();
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-
-      logoRemoveBtn.addEventListener('click', function () {
-        logoSourceDataUrl = null;
-        logoOverlayDataUrl = null;
-        logoInput.value = '';
-        logoPreview.style.display = 'none';
-        logoRemoveBtn.style.display = 'none';
-        regenerate();
-      });
-
-      function updateLogoOverlay() {
-        if (!logoSourceDataUrl) {
-          logoOverlayDataUrl = null;
-          logoOverlay.style.display = 'none';
-          return;
-        }
-        // Con corrección alta (H, ~30%) un logo de hasta ~22% del ancho
-        // se puede tapar sin romper el escaneo.
-        var maxSize = Math.round(currentSize * 0.22);
-        var padding = Math.round(maxSize * 0.16);
-        buildLogoComposite(logoSourceDataUrl, maxSize, padding, function (dataUrl, w, h) {
-          logoOverlayDataUrl = dataUrl;
-          logoOverlayW = w;
-          logoOverlayH = h;
-          logoOverlayImg.src = dataUrl;
-          logoOverlayImg.width = w;
-          logoOverlayImg.height = h;
-          logoOverlay.style.display = 'block';
-        });
-      }
-
-      function updateQrInfo(moduleCount, correctLevelLabel) {
-        var cls, nota;
+      function updateQrInfo(moduleCount) {
+        var cls, label;
         if (moduleCount <= 25) {
           cls = '';
-          nota = 'Código simple: cuadritos grandes, ideal para imprimir pequeño.';
+          label = 'Simple';
         } else if (moduleCount <= 33) {
           cls = 'warn';
-          nota = 'Densidad media: imprímelo en tamaño mediano o más grande para que escanee bien.';
+          label = 'Medio';
         } else {
           cls = 'bad';
-          nota = 'Enlace largo: el patrón queda muy apretado. Si lo vas a imprimir chico, acórtalo (por ejemplo con bit.ly) o imprímelo más grande.';
+          label = 'Denso';
         }
         qrInfo.className = cls;
-        qrInfo.innerHTML =
-          '<strong>' + moduleCount + '×' + moduleCount + ' módulos</strong> · Corrección ' + correctLevelLabel + '<br>' + nota;
+        qrInfo.textContent = moduleCount + '×' + moduleCount + ' módulos · ' + label;
         qrInfo.style.display = 'block';
       }
 
@@ -551,13 +277,6 @@
 
       function renderQr(text) {
         lastRenderedText = text;
-        // Sin logo: corrección baja, así el código necesita menos módulos para
-        // el mismo texto (cuadritos más grandes). Con logo: corrección media
-        // (M, ~15%) — de sobra para una silueta+halo que tapa solo ~8-9% del
-        // área del QR; subir a H (~30%) infla los módulos sin necesidad real.
-        var usingLogo = !!logoSourceDataUrl;
-        var correctLevel = usingLogo ? QRCode.CorrectLevel.M : QRCode.CorrectLevel.L;
-
         qrcodeDiv.innerHTML = '';
         qrcode = new QRCode(qrcodeDiv, {
           text: text,
@@ -565,10 +284,8 @@
           height: currentSize,
           colorDark: '#000000',
           colorLight: '#ffffff',
-          correctLevel: correctLevel
+          correctLevel: QRCode.CorrectLevel.L
         });
-
-        updateLogoOverlay();
 
         var moduleCount = 21;
         try {
@@ -576,7 +293,7 @@
         } catch (err) {
           /* si la librería cambia su estructura interna, se omite el dato */
         }
-        updateQrInfo(moduleCount, usingLogo ? 'media (por el logo)' : 'baja (sin logo)');
+        updateQrInfo(moduleCount);
 
         hasGenerated = true;
         downloadBtn.style.display = 'block';
@@ -586,14 +303,13 @@
         useOriginalInstead = false;
         shortenStatus.className = 'ok';
         shortenStatus.innerHTML =
-          'Enlace acortado: <strong>' + shortenedUrl + '</strong> · <a href="#" id="useOriginalLink">usar el original</a>';
+          '<strong>' + shortenedUrl + '</strong> · <a href="#" id="useOriginalLink">original</a>';
         shortenStatus.style.display = 'block';
         document.getElementById('useOriginalLink').addEventListener('click', function (e) {
           e.preventDefault();
           useOriginalInstead = true;
           renderQr(shortenedFrom);
-          shortenStatus.innerHTML =
-            'Usando el enlace original · <a href="#" id="useShortLink">volver al acortado</a>';
+          shortenStatus.innerHTML = 'Usando original · <a href="#" id="useShortLink">acortado</a>';
           document.getElementById('useShortLink').addEventListener('click', function (e2) {
             e2.preventDefault();
             useOriginalInstead = false;
@@ -630,9 +346,9 @@
         }
 
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Acortando enlace...';
+        submitBtn.textContent = 'Acortando...';
         shortenStatus.className = 'pending';
-        shortenStatus.textContent = 'Acortando enlace con cleanuri.com...';
+        shortenStatus.textContent = 'Acortando...';
         shortenStatus.style.display = 'block';
 
         try {
@@ -646,8 +362,7 @@
           shortenedUrl = null;
           shortenedFrom = null;
           shortenStatus.className = 'fail';
-          shortenStatus.textContent =
-            'No se pudo acortar automáticamente (sin conexión o el servicio no está disponible). Se usó el enlace original.';
+          shortenStatus.textContent = 'No se pudo acortar. Se usó el original.';
           shortenStatus.style.display = 'block';
           renderQr(text);
         } finally {
@@ -661,15 +376,7 @@
         shortenedFrom = null;
         useOriginalInstead = false;
         shortenStatus.style.display = 'none';
-
-        var len = urlInput.value.trim().length;
-        if (len > 60) {
-          lengthHint.classList.add('warn');
-          lengthHint.textContent = 'Tu enlace tiene ' + len + ' caracteres: el QR quedará denso. Para que se escanee bien impreso chico, considera acortarlo (bit.ly, etc.).';
-        } else {
-          lengthHint.classList.remove('warn');
-          lengthHint.textContent = 'Consejo: entre más corto el enlace, más grandes y "espaciosos" quedan los cuadritos del QR, y más fácil se escanea impreso chico.';
-        }
+        lengthHint.style.display = urlInput.value.trim().length > 60 ? 'block' : 'none';
       });
 
       form.addEventListener('submit', function (e) {
@@ -694,27 +401,6 @@
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-        function drawLogoAndExport(qrImg) {
-          ctx.drawImage(qrImg, quietZone, quietZone, currentSize, currentSize);
-
-          if (!logoOverlayDataUrl) {
-            triggerDownload();
-            return;
-          }
-          var logoImg = new Image();
-          logoImg.onload = function () {
-            ctx.drawImage(
-              logoImg,
-              (canvasSize - logoOverlayW) / 2,
-              (canvasSize - logoOverlayH) / 2,
-              logoOverlayW,
-              logoOverlayH
-            );
-            triggerDownload();
-          };
-          logoImg.src = logoOverlayDataUrl;
-        }
-
         function triggerDownload() {
           var link = document.createElement('a');
           link.download = 'codigo-qr.png';
@@ -722,13 +408,16 @@
           link.click();
         }
 
+        function draw(qrImg) {
+          ctx.drawImage(qrImg, quietZone, quietZone, currentSize, currentSize);
+          triggerDownload();
+        }
+
         if (src.tagName === 'CANVAS') {
-          drawLogoAndExport(src);
+          draw(src);
         } else {
           var qrImg = new Image();
-          qrImg.onload = function () {
-            drawLogoAndExport(qrImg);
-          };
+          qrImg.onload = function () { draw(qrImg); };
           qrImg.src = src.src;
         }
       });
