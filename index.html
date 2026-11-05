@@ -551,11 +551,12 @@
 
       function renderQr(text) {
         lastRenderedText = text;
-        // Sin logo: corrección baja, así el código necesita menos módulos
-        // para el mismo texto (cuadritos más grandes). Con logo: corrección
-        // alta, necesaria para que el logo no rompa la lectura.
+        // Sin logo: corrección baja, así el código necesita menos módulos para
+        // el mismo texto (cuadritos más grandes). Con logo: corrección media
+        // (M, ~15%) — de sobra para una silueta+halo que tapa solo ~8-9% del
+        // área del QR; subir a H (~30%) infla los módulos sin necesidad real.
         var usingLogo = !!logoSourceDataUrl;
-        var correctLevel = usingLogo ? QRCode.CorrectLevel.H : QRCode.CorrectLevel.L;
+        var correctLevel = usingLogo ? QRCode.CorrectLevel.M : QRCode.CorrectLevel.L;
 
         qrcodeDiv.innerHTML = '';
         qrcode = new QRCode(qrcodeDiv, {
@@ -575,7 +576,7 @@
         } catch (err) {
           /* si la librería cambia su estructura interna, se omite el dato */
         }
-        updateQrInfo(moduleCount, usingLogo ? 'alta (por el logo)' : 'baja (sin logo)');
+        updateQrInfo(moduleCount, usingLogo ? 'media (por el logo)' : 'baja (sin logo)');
 
         hasGenerated = true;
         downloadBtn.style.display = 'block';
